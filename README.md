@@ -17,7 +17,6 @@ This project is an *AI-powered mobile application* designed to assist farmers in
 - *Backend:* Node.js + FastAPI
 - *AI/ML:* TensorFlow/Keras for crop disease detection
 - *Database:* Firebase / MongoDB
-- *Cloud Hosting:* AWS (S3 for storage, EC2 for backend hosting)
 
 ---
 
