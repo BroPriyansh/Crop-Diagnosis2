@@ -262,12 +262,12 @@ export default function LoginScreen() {
               </View>
 
               {/* Social Login Buttons */}
-              <View style={styles.socialButtonsContainer}>
+              {/* <View style={styles.socialButtonsContainer}>
                 <TouchableOpacity style={styles.socialButton}>
                   <Ionicons name="logo-google" size={24} color="#ea4335" />
                 </TouchableOpacity>
 
-              </View>
+              </View> */}
 
               {/* Sign Up Link */}
               <View style={styles.signUpContainer}>

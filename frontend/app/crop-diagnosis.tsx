@@ -1,5 +1,14 @@
+// MultipleFiles/crop-diagnosis.tsx
 import React, { useState } from "react";
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, Platform } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  TextInput,
+} from "react-native";
 import ImageUpload from "./components/ImageUpload";
 import VoiceRecorder from "./components/VoiceRecorder";
 import DiagnosisResults from "./components/DiagnosisResults";
@@ -21,45 +30,48 @@ const CropRecommendationScreen: React.FC = () => {
   const [sessionId, setSessionId] = useState<string>("");
 
   // Get the correct API URL based on platform
-  const getApiUrl = () => {
-    if (Platform.OS === 'android') {
-      // Use the network IP from your earlier logs
-      return 'http://172.16.92.63:8005';
+  const getApiUrl = (service: "ml_model" | "chatbot") => {
+    // Use the actual network IP that servers are running on
+    const baseIp = "172.16.92.63"; // Use the same IP from your server logs
+    if (service === "ml_model") {
+      return `http://${baseIp}:8000`; // main.py runs on 8000
     } else {
-      return 'http://localhost:8005'; // iOS simulator and web
+      return `http://${baseIp}:8005`; // chatbot runs on 8005
     }
   };
 
   // Real disease diagnosis from image
   const handleImageSelect = async (file: any) => {
-    console.log('🖼️ Image selected, starting diagnosis...');
+    console.log("🖼️ Image selected, starting diagnosis...");
     setIsAnalyzing(true);
     try {
-      // Call the crop diagnosis API
-      const apiUrl = getApiUrl();
-      console.log('🌐 Using API URL:', apiUrl);
-      console.log('📤 Making request to:', `${apiUrl}/api/diagnose`);
-      
-      const response = await fetch(`${apiUrl}/api/diagnose`, {
-        method: 'POST',
+      // Use the integrated endpoint that handles ML model + chatbot internally
+      const chatbotApiUrl = getApiUrl("chatbot");
+      console.log("📤 Sending to integrated endpoint:", chatbotApiUrl);
+
+      // Fallback to text-based diagnosis since file upload fails in React Native
+      const response = await fetch(`${chatbotApiUrl}/api/diagnose`, {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          disease_image_description: "User uploaded an image of a diseased crop for diagnosis",
-          crop_type: "Unknown crop from image",
+          disease_image_description: "User uploaded an image for crop disease diagnosis but image analysis is required to provide accurate identification.",
+          crop_type: "Unknown crop from uploaded image",
+          symptoms: "Image analysis required to identify symptoms",
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get diagnosis');
+        const errorText = await response.text();
+        throw new Error(`Diagnosis failed: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       setSessionId(data.session_id);
-      
+
       setDiagnosisResults({
-        disease: data.disease_name || "Disease Analysis",
+        disease: "Image Analysis Required",
         confidence: data.confidence || 0.85,
         severity: "disease",
         description: data.response,
@@ -68,29 +80,29 @@ const CropRecommendationScreen: React.FC = () => {
         symptoms: data.symptoms || [],
         prevention: data.prevention || [],
       });
-      
-      // Show chatbot after diagnosis
+
       setShowChatbot(true);
-      
     } catch (error) {
-      console.error('Diagnosis error:', error);
+      console.error("Diagnosis error:", error);
       // Generate a session ID even for failed diagnosis to enable chatbot
       const fallbackSessionId = `session_${Date.now()}`;
       setSessionId(fallbackSessionId);
-      
+
+      // Provide a user-friendly error message and enable chatbot for manual interaction
       setDiagnosisResults({
-        disease: "General Crop Disease",
-        confidence: 0.5,
+        disease: "Diagnosis Failed",
+        confidence: 0,
         severity: "unknown",
-        description: "Unable to identify the specific disease from the image. However, I can still help you with general crop disease questions and treatments.",
+        description: `An error occurred during diagnosis: ${
+          error instanceof Error ? error.message : String(error)
+        }. Please ensure both backend services (ML model on 8000 and Chatbot on 8005) are running and accessible. You can still ask general questions below.`,
         recommendations: [
-          "Ask me about common crop diseases",
-          "Describe the symptoms you're seeing",
-          "Get general treatment advice",
-          "Learn about prevention methods"
+          "Check backend server status (ports 8000 and 8005)",
+          "Try describing symptoms in the chat",
+          "Ask about common crop diseases",
         ],
       });
-      
+
       // Show chatbot even when diagnosis fails
       setShowChatbot(true);
     } finally {
@@ -107,14 +119,14 @@ const CropRecommendationScreen: React.FC = () => {
     setChatQuestion("");
 
     // Add user message to chat
-    setChatMessages(prev => [...prev, { text: userMessage, sender: "user" }]);
+    setChatMessages((prev) => [...prev, { text: userMessage, sender: "user" }]);
 
     try {
-      const apiUrl = getApiUrl();
+      const apiUrl = getApiUrl("chatbot"); // Chatbot API for general chat
       const response = await fetch(`${apiUrl}/api/chat`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
           message: userMessage,
@@ -123,20 +135,19 @@ const CropRecommendationScreen: React.FC = () => {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get chat response');
+        throw new Error("Failed to get chat response");
       }
 
       const data = await response.json();
-      setChatMessages(prev => [...prev, { text: data.response, sender: "bot" }]);
-      
+      setChatMessages((prev) => [...prev, { text: data.response, sender: "bot" }]);
     } catch (error) {
-      console.error('Chat error:', error);
+      console.error("Chat error:", error);
       let errorMessage = "I'm having trouble connecting to the server. ";
-      
+
       if (error instanceof Error) {
-        if (error.message?.includes('Network request failed')) {
+        if (error.message?.includes("Network request failed")) {
           errorMessage += "Please make sure the backend server is running on port 8005 and try again.";
-        } else if (error.message?.includes('Failed to fetch')) {
+        } else if (error.message?.includes("Failed to fetch")) {
           errorMessage += "Please check your internet connection and try again.";
         } else {
           errorMessage += "Please try asking your question again.";
@@ -144,11 +155,8 @@ const CropRecommendationScreen: React.FC = () => {
       } else {
         errorMessage += "Please try asking your question again.";
       }
-      
-      setChatMessages(prev => [...prev, { 
-        text: errorMessage, 
-        sender: "bot" 
-      }]);
+
+      setChatMessages((prev) => [...prev, { text: errorMessage, sender: "bot" }]);
     } finally {
       setChatLoading(false);
     }
@@ -159,54 +167,61 @@ const CropRecommendationScreen: React.FC = () => {
     setIsAnalyzing(true);
     try {
       // For now, use a placeholder - you can integrate speech-to-text later
-      const apiUrl = getApiUrl();
+      // This will call the chatbot's /api/diagnose endpoint with a text description.
+      const apiUrl = getApiUrl("chatbot");
       const response = await fetch(`${apiUrl}/api/diagnose`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          disease_image_description: "User described crop disease symptoms via audio",
+          disease_image_description: "User  described crop disease symptoms via audio",
           symptoms: "Audio-described symptoms of crop disease",
+          // No predicted_class, confidence, etc. for audio input directly
         }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to get diagnosis');
+        const errorText = await response.text();
+        throw new Error(`Failed to get diagnosis: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       setSessionId(data.session_id);
-      
+
       setDiagnosisResults({
-        disease: data.disease_name || "Disease Analysis",
+        disease: "Image Analysis Required",
         confidence: data.confidence || 0.85,
         severity: "disease",
         description: data.response,
         recommendations: data.solutions || [],
+        causes: data.causes || [],
+        symptoms: data.symptoms || [],
+        prevention: data.prevention || [],
       });
-      
+
       setShowChatbot(true);
-      
     } catch (error) {
-      console.error('Audio diagnosis error:', error);
+      console.error("Audio diagnosis error:", error);
       // Generate a session ID even for failed diagnosis to enable chatbot
       const fallbackSessionId = `session_${Date.now()}`;
       setSessionId(fallbackSessionId);
-      
+
       setDiagnosisResults({
         disease: "General Crop Disease",
         confidence: 0.5,
         severity: "unknown",
-        description: "Unable to process the audio description. However, I can still help you with general crop disease questions and treatments.",
+        description: `Unable to process the audio description: ${
+          error instanceof Error ? error.message : String(error)
+        }. However, I can still help you with general crop disease questions and treatments.`,
         recommendations: [
           "Ask me about common crop diseases",
           "Describe the symptoms in text",
           "Get general treatment advice",
-          "Learn about prevention methods"
+          "Learn about prevention methods",
         ],
       });
-      
+
       // Show chatbot even when diagnosis fails
       setShowChatbot(true);
     } finally {
@@ -219,9 +234,7 @@ const CropRecommendationScreen: React.FC = () => {
       {/* Header Section */}
       <View style={styles.headerSection}>
         <Text style={styles.headerTitle}>{translations.cropDiagnosisTitle}</Text>
-        <Text style={styles.headerSubtitle}>
-          {translations.cropDiagnosisSubtitle}
-        </Text>
+        <Text style={styles.headerSubtitle}>{translations.cropDiagnosisSubtitle}</Text>
       </View>
 
       {/* Input Section */}
@@ -229,7 +242,7 @@ const CropRecommendationScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>{translations.analyzeFarmingConditions}</Text>
         <View style={styles.cardsRow}>
           <ImageUpload onImageSelect={handleImageSelect} isLoading={isAnalyzing} />
-          <VoiceRecorder onAudioRecorded={handleAudioRecorded} isLoading={isAnalyzing} />
+          {/* <VoiceRecorder onAudioRecorded={handleAudioRecorded} isLoading={isAnalyzing} /> */}
         </View>
         {isAnalyzing && <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 16 }} />}
       </View>
@@ -250,33 +263,29 @@ const CropRecommendationScreen: React.FC = () => {
       {showChatbot && (
         <View style={styles.chatSection}>
           <Text style={styles.sectionTitle}>Ask More Questions</Text>
-          <Text style={styles.chatSubtitle}>
-            Have more questions about this disease? Ask our expert bot!
-          </Text>
-          
+          <Text style={styles.chatSubtitle}>Have more questions about this disease? Ask our expert bot!</Text>
+
           {/* Chat Messages */}
           {chatMessages.length > 0 && (
-            <ScrollView 
-              style={styles.chatMessages}
-              showsVerticalScrollIndicator={true}
-              nestedScrollEnabled={true}
-            >
+            <ScrollView style={styles.chatMessages} showsVerticalScrollIndicator={true} nestedScrollEnabled={true}>
               {chatMessages.map((item, index) => (
-                <View key={`${item.sender}-${index}`} style={[
-                  styles.chatMessage,
-                  item.sender === 'bot' ? styles.botMessage : styles.userMessage
-                ]}>
-                  <Text style={[
-                    styles.chatMessageText,
-                    item.sender === 'bot' ? styles.botMessageText : styles.userMessageText
-                  ]}>
+                <View
+                  key={`${item.sender}-${index}`}
+                  style={[styles.chatMessage, item.sender === "bot" ? styles.botMessage : styles.userMessage]}
+                >
+                  <Text
+                    style={[
+                      styles.chatMessageText,
+                      item.sender === "bot" ? styles.botMessageText : styles.userMessageText,
+                    ]}
+                  >
                     {item.text}
                   </Text>
                 </View>
               ))}
             </ScrollView>
           )}
-          
+
           {/* Chat Loading */}
           {chatLoading && (
             <View style={styles.chatLoading}>
@@ -284,7 +293,7 @@ const CropRecommendationScreen: React.FC = () => {
               <Text style={styles.chatLoadingText}>Thinking...</Text>
             </View>
           )}
-          
+
           {/* Chat Input */}
           <View style={styles.chatInputContainer}>
             <TextInput
@@ -297,16 +306,11 @@ const CropRecommendationScreen: React.FC = () => {
               maxLength={300}
             />
             <TouchableOpacity
-              style={[
-                styles.chatSendButton,
-                (!chatQuestion.trim() || chatLoading) && styles.chatSendButtonDisabled
-              ]}
+              style={[styles.chatSendButton, (!chatQuestion.trim() || chatLoading) && styles.chatSendButtonDisabled]}
               onPress={sendChatMessage}
               disabled={!chatQuestion.trim() || chatLoading}
             >
-              <Text style={styles.chatSendButtonText}>
-                {chatLoading ? "..." : "Send"}
-              </Text>
+              <Text style={styles.chatSendButtonText}>{chatLoading ? "..." : "Send"}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -317,21 +321,15 @@ const CropRecommendationScreen: React.FC = () => {
         <Text style={styles.sectionTitle}>{translations.farmingTips}</Text>
         <View style={styles.tipCard}>
           <Text style={styles.tipTitle}>{translations.soilPreparation}</Text>
-          <Text style={styles.tipDescription}>
-            {translations.soilPreparationDesc}
-          </Text>
+          <Text style={styles.tipDescription}>{translations.soilPreparationDesc}</Text>
         </View>
         <View style={styles.tipCard}>
           <Text style={styles.tipTitle}>{translations.waterManagement}</Text>
-          <Text style={styles.tipDescription}>
-            {translations.waterManagementDesc}
-          </Text>
+          <Text style={styles.tipDescription}>{translations.waterManagementDesc}</Text>
         </View>
         <View style={styles.tipCard}>
           <Text style={styles.tipTitle}>{translations.cropRotation}</Text>
-          <Text style={styles.tipDescription}>
-            {translations.cropRotationDesc}
-          </Text>
+          <Text style={styles.tipDescription}>{translations.cropRotationDesc}</Text>
         </View>
       </View>
     </ScrollView>
